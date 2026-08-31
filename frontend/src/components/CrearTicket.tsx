@@ -72,7 +72,7 @@ export const CrearTicket: React.FC<CrearTicketProps> = ({ onTicketCreado }) => {
       // Validar si el RUT es matemáticamente válido con Módulo 11
       if (!validateRut(trimmed)) {
         setUsuarioEncontrado(null);
-        setErrorUsuario('El RUT ingresado no cumple con el algoritmo Módulo 11.');
+        setErrorUsuario('El RUT ingresado no cumple con el algoritmo de rut, ni rut ingresado');
         return;
       }
 
@@ -245,7 +245,7 @@ export const CrearTicket: React.FC<CrearTicketProps> = ({ onTicketCreado }) => {
                   <p className="text-xs text-rose-600 mt-1">{errors.rut.message}</p>
                 )}
                 <span className="text-[11px] text-slate-400 mt-1 block">
-                  Validación automática con Módulo 11 (debounce 400ms)
+                  Validación automática con algoritmo de ruts y sin coincidencias dentro de la DB. :x
                 </span>
               </div>
 
