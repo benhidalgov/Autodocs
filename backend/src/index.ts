@@ -2,7 +2,17 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { validateRut, formatRut } from '../../shared/rut';
+import { RolUsuario, Estado, Prioridad } from '../../shared/types';
+import {
+  autenticarToken,
+  autorizarRoles,
+  AuthRequest,
+  JWT_SECRET,
+  UsuarioTokenPayload
+} from './middlewares/auth';
 
 const app = express();
 const prisma = new PrismaClient();
@@ -11,12 +21,17 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Helper para generar el próximo código de ticket con formato TCK-YYYY-XXXX
+// Helper para parsear parametros ID de express
+function parseParamId(param: string | string[] | undefined): number {
+  const val = Array.isArray(param) ? param[0] : param;
+  return parseInt(val || '', 10);
+}
+
+// Helper para generar el proximo codigo correlativo inmutable: TCK-YYYY-XXXX
 async function generarCodigoTicket(): Promise<string> {
   const currentYear = new Date().getFullYear();
   const prefix = `TCK-${currentYear}-`;
 
-  // Buscar el último ticket creado en el año actual
   const ultimoTicket = await prisma.ticket.findFirst({
     where: {
       codigo: {
@@ -44,19 +59,121 @@ async function generarCodigoTicket(): Promise<string> {
 }
 
 // ==========================================
-// 1. GET /api/usuarios/:rut
-// Devuelve nombre y departamento si existe
+// 1. AUTENTICACION: POST /api/auth/login
+// ==========================================
+const loginSchema = z.object({
+  identificador: z.string().min(1, 'El identificador (RUT o Email) es obligatorio'),
+  password: z.string().min(1, 'La contrasena es obligatoria')
+});
+
+app.post('/api/auth/login', async (req: Request, res: Response) => {
+  try {
+    const validacion = loginSchema.safeParse(req.body);
+    if (!validacion.success) {
+      return res.status(400).json({
+        error: '[ERROR] Datos de ingreso invalidos',
+        detalles: validacion.error.flatten().fieldErrors
+      });
+    }
+
+    const { identificador, password } = validacion.data;
+    const cleanIdent = identificador.trim();
+
+    // Intentar buscar por RUT o por Email
+    let usuario = null;
+    if (cleanIdent.includes('@')) {
+      usuario = await prisma.usuario.findUnique({
+        where: { email: cleanIdent.toLowerCase() }
+      });
+    } else {
+      const rutFormateado = formatRut(cleanIdent);
+      usuario = await prisma.usuario.findUnique({
+        where: { rut: rutFormateado }
+      });
+    }
+
+    if (!usuario || !usuario.activo) {
+      return res.status(401).json({
+        error: '[ERROR] Credenciales invalidas o cuenta inactiva'
+      });
+    }
+
+    // Validar contrasena con bcrypt
+    const passwordCorrecto = await bcrypt.compare(password, usuario.passwordHash);
+    if (!passwordCorrecto) {
+      return res.status(401).json({
+        error: '[ERROR] Credenciales invalidas o cuenta inactiva'
+      });
+    }
+
+    const tokenPayload: UsuarioTokenPayload = {
+      id: usuario.id,
+      rut: usuario.rut,
+      nombre: usuario.nombre,
+      email: usuario.email,
+      departamento: usuario.departamento,
+      rol: usuario.rol as RolUsuario
+    };
+
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '12h' });
+
+    return res.json({
+      token,
+      usuario: tokenPayload
+    });
+  } catch (error) {
+    console.error('[ERROR] Error en login:', error);
+    return res.status(500).json({ error: '[ERROR] Error interno en el proceso de autenticacion' });
+  }
+});
+
+// ==========================================
+// 2. PERFIL: GET /api/auth/perfil
+// ==========================================
+app.get('/api/auth/perfil', autenticarToken, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.usuario) {
+      return res.status(401).json({ error: '[ERROR] No autenticado' });
+    }
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.usuario.id },
+      select: {
+        id: true,
+        rut: true,
+        nombre: true,
+        departamento: true,
+        email: true,
+        rol: true,
+        activo: true,
+        creadoEn: true
+      }
+    });
+
+    if (!usuario) {
+      return res.status(404).json({ error: '[ERROR] Usuario no encontrado' });
+    }
+
+    return res.json(usuario);
+  } catch (error) {
+    console.error('[ERROR] Error al consultar perfil:', error);
+    return res.status(500).json({ error: '[ERROR] Error al consultar perfil' });
+  }
+});
+
+// ==========================================
+// 3. CONSULTA DE RUT: GET /api/usuarios/:rut
 // ==========================================
 app.get('/api/usuarios/:rut', async (req: Request, res: Response) => {
   try {
     const rawRut = Array.isArray(req.params.rut) ? req.params.rut[0] : req.params.rut;
     if (!rawRut) {
-      return res.status(400).json({ error: 'RUT es requerido' });
+      return res.status(400).json({ error: '[ERROR] RUT es requerido' });
     }
 
     const rut = formatRut(rawRut);
     if (!validateRut(rut)) {
-      return res.status(400).json({ error: 'El RUT ingresado no es válido según algoritmo Módulo 11' });
+      return res.status(400).json({ error: '[ERROR] El RUT no cumple con el algoritmo Modulo 11' });
     }
 
     const usuario = await prisma.usuario.findUnique({
@@ -66,116 +183,52 @@ app.get('/api/usuarios/:rut', async (req: Request, res: Response) => {
         rut: true,
         nombre: true,
         departamento: true,
-        email: true
+        email: true,
+        rol: true
       }
     });
 
     if (!usuario) {
-      return res.status(404).json({ error: 'Usuario no encontrado con el RUT ingresado' });
+      return res.status(404).json({ error: '[ERROR] Colaborador no encontrado con el RUT ingresado' });
     }
 
     return res.json(usuario);
   } catch (error) {
-    console.error('Error al buscar usuario:', error);
-    return res.status(500).json({ error: 'Error interno del servidor al consultar usuario' });
+    console.error('[ERROR] Error al buscar usuario:', error);
+    return res.status(500).json({ error: '[ERROR] Error al consultar usuario' });
   }
 });
 
 // ==========================================
-// 2. POST /api/tickets
-// Crea ticket revalidando el RUT y todos los campos obligatorios
+// 4. MIS TICKETS: GET /api/mis-tickets
 // ==========================================
-const crearTicketSchema = z.object({
-  rut: z.string().min(1, 'El RUT es obligatorio'),
-  categoria: z.string().min(1, 'La categoría es obligatoria'),
-  prioridad: z.enum(['baja', 'media', 'alta', 'critica'], {
-    errorMap: () => ({ message: 'Prioridad inválida. Debe ser: baja, media, alta o critica' })
-  }),
-  descripcion: z.string().min(5, 'La descripción debe tener al menos 5 caracteres')
-});
-
-app.post('/api/tickets', async (req: Request, res: Response) => {
+app.get('/api/mis-tickets', autenticarToken, async (req: AuthRequest, res: Response) => {
   try {
-    // Validar formato de los campos recibidos en el servidor con Zod
-    const validationResult = crearTicketSchema.safeParse(req.body);
-    if (!validationResult.success) {
-      return res.status(400).json({
-        error: 'Datos inválidos',
-        detalles: validationResult.error.flatten().fieldErrors
-      });
+    if (!req.usuario) {
+      return res.status(401).json({ error: '[ERROR] No autenticado' });
     }
 
-    const { rut: rawRut, categoria, prioridad, descripcion } = validationResult.data;
-
-    // Normalizar y revalidar RUT con Módulo 11 (regla de oro: nunca confiar solo en frontend)
-    const rut = formatRut(rawRut);
-    if (!validateRut(rut)) {
-      return res.status(400).json({
-        error: 'El RUT provisto no es un RUT chileno válido (Módulo 11)'
-      });
-    }
-
-    // Verificar existencia del usuario en la base de datos
-    const usuario = await prisma.usuario.findUnique({
-      where: { rut }
-    });
-
-    if (!usuario) {
-      return res.status(404).json({
-        error: 'El usuario asociado al RUT no está registrado en el sistema'
-      });
-    }
-
-    // Generar código correlativo único (ej: TCK-2026-0001)
-    const codigo = await generarCodigoTicket();
-
-    const nuevoTicket = await prisma.ticket.create({
-      data: {
-        codigo,
-        usuarioId: usuario.id,
-        categoria,
-        prioridad,
-        estado: 'abierto',
-        descripcion
-      },
-      include: {
-        usuario: {
-          select: {
-            id: true,
-            rut: true,
-            nombre: true,
-            departamento: true,
-            email: true
-          }
-        }
-      }
-    });
-
-    return res.status(201).json(nuevoTicket);
-  } catch (error) {
-    console.error('Error al crear ticket:', error);
-    return res.status(500).json({ error: 'Error interno del servidor al crear el ticket' });
-  }
-});
-
-// ==========================================
-// 3. GET /api/tickets
-// Lista todos los tickets, más recientes primero
-// ==========================================
-app.get('/api/tickets', async (_req: Request, res: Response) => {
-  try {
     const tickets = await prisma.ticket.findMany({
+      where: {
+        solicitanteId: req.usuario.id
+      },
       orderBy: {
         creadoEn: 'desc'
       },
       include: {
-        usuario: {
-          select: {
-            id: true,
-            rut: true,
-            nombre: true,
-            departamento: true,
-            email: true
+        solicitante: {
+          select: { id: true, rut: true, nombre: true, departamento: true, email: true, rol: true }
+        },
+        tecnico: {
+          select: { id: true, rut: true, nombre: true, departamento: true, email: true, rol: true }
+        },
+        comentarios: {
+          where: { esInterno: false }, // Solicitante solo ve comentarios publicos
+          orderBy: { creadoEn: 'asc' },
+          include: {
+            autor: {
+              select: { id: true, nombre: true, rol: true }
+            }
           }
         }
       }
@@ -183,76 +236,544 @@ app.get('/api/tickets', async (_req: Request, res: Response) => {
 
     return res.json(tickets);
   } catch (error) {
-    console.error('Error al listar tickets:', error);
-    return res.status(500).json({ error: 'Error interno del servidor al listar tickets' });
+    console.error('[ERROR] Error al listar mis tickets:', error);
+    return res.status(500).json({ error: '[ERROR] Error al recuperar tickets personales' });
   }
 });
 
 // ==========================================
-// 4. PATCH /api/tickets/:id/estado
-// Cambia el estado de un ticket
+// 5. CREAR TICKET: POST /api/tickets
 // ==========================================
-const actualizarEstadoSchema = z.object({
-  estado: z.enum(['abierto', 'en_proceso', 'resuelto', 'cerrado'], {
-    errorMap: () => ({ message: 'Estado inválido. Debe ser: abierto, en_proceso, resuelto o cerrado' })
-  })
+const crearTicketSchema = z.object({
+  rut: z.string().optional(),
+  categoria: z.string().min(1, 'La categoria es obligatoria'),
+  prioridad: z.enum(['baja', 'media', 'alta', 'critica'], {
+    errorMap: () => ({ message: 'Prioridad invalida (baja, media, alta, critica)' })
+  }),
+  descripcion: z.string().min(5, 'La descripcion debe tener al menos 5 caracteres'),
+  ciAfectado: z.string().optional()
 });
 
-app.patch('/api/tickets/:id/estado', async (req: Request, res: Response) => {
+app.post('/api/tickets', async (req: AuthRequest, res: Response) => {
   try {
-    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const id = parseInt(idParam, 10);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID de ticket inválido' });
-    }
-
-    const validationResult = actualizarEstadoSchema.safeParse(req.body);
-    if (!validationResult.success) {
+    const validacion = crearTicketSchema.safeParse(req.body);
+    if (!validacion.success) {
       return res.status(400).json({
-        error: 'Datos inválidos',
-        detalles: validationResult.error.flatten().fieldErrors
+        error: '[ERROR] Datos invalidos',
+        detalles: validacion.error.flatten().fieldErrors
       });
     }
 
-    const { estado } = validationResult.data;
+    const { rut: rawRut, categoria, prioridad, descripcion, ciAfectado } = validacion.data;
 
-    // Verificar si el ticket existe
-    const ticketExistente = await prisma.ticket.findUnique({
-      where: { id }
-    });
+    let solicitanteId: number | null = null;
 
-    if (!ticketExistente) {
-      return res.status(404).json({ error: 'Ticket no encontrado' });
+    // Si viene token autenticado, usar el usuario de la sesion
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const payload = jwt.verify(token, JWT_SECRET) as UsuarioTokenPayload;
+        solicitanteId = payload.id;
+      } catch (e) {
+        // Token no valido, continuar validando por RUT
+      }
     }
 
-    const ticketActualizado = await prisma.ticket.update({
-      where: { id },
-      data: { estado },
+    if (!solicitanteId) {
+      if (!rawRut) {
+        return res.status(400).json({ error: '[ERROR] Se requiere RUT o sesion activa para crear el ticket' });
+      }
+
+      const rut = formatRut(rawRut);
+      if (!validateRut(rut)) {
+        return res.status(400).json({ error: '[ERROR] RUT no valido segun Modulo 11' });
+      }
+
+      const usuario = await prisma.usuario.findUnique({ where: { rut } });
+      if (!usuario) {
+        return res.status(404).json({ error: '[ERROR] El usuario no esta registrado en el sistema' });
+      }
+      solicitanteId = usuario.id;
+    }
+
+    const codigo = await generarCodigoTicket();
+
+    // Asignar SLA segun prioridad (minutos)
+    let slaLimiteMinutos = 240; // 4 horas
+    if (prioridad === 'critica') slaLimiteMinutos = 60; // 1 hora
+    else if (prioridad === 'alta') slaLimiteMinutos = 120; // 2 horas
+    else if (prioridad === 'baja') slaLimiteMinutos = 480; // 8 horas
+
+    const nuevoTicket = await prisma.ticket.create({
+      data: {
+        codigo,
+        solicitanteId,
+        categoria,
+        prioridad,
+        estado: 'abierto',
+        descripcion,
+        ciAfectado: ciAfectado || null,
+        slaLimiteMinutos
+      },
       include: {
-        usuario: {
-          select: {
-            id: true,
-            rut: true,
-            nombre: true,
-            departamento: true,
-            email: true
+        solicitante: {
+          select: { id: true, rut: true, nombre: true, departamento: true, email: true, rol: true }
+        },
+        tecnico: {
+          select: { id: true, rut: true, nombre: true, departamento: true, email: true, rol: true }
+        },
+        comentarios: true
+      }
+    });
+
+    return res.status(201).json(nuevoTicket);
+  } catch (error) {
+    console.error('[ERROR] Error al crear ticket:', error);
+    return res.status(500).json({ error: '[ERROR] Error interno al crear ticket' });
+  }
+});
+
+// ==========================================
+// 6. LISTADO GENERAL: GET /api/tickets
+// ==========================================
+app.get('/api/tickets', async (req: Request, res: Response) => {
+  try {
+    const { estado, departamento, categoria, prioridad, busqueda } = req.query;
+
+    const whereClause: any = {};
+
+    if (estado && estado !== 'todos') {
+      whereClause.estado = String(estado);
+    }
+    if (categoria && categoria !== 'todos') {
+      whereClause.categoria = String(categoria);
+    }
+    if (prioridad && prioridad !== 'todos') {
+      whereClause.prioridad = String(prioridad);
+    }
+    if (departamento && departamento !== 'todos') {
+      whereClause.solicitante = {
+        departamento: String(departamento)
+      };
+    }
+
+    if (busqueda && String(busqueda).trim() !== '') {
+      const q = String(busqueda).trim();
+      whereClause.OR = [
+        { codigo: { contains: q } },
+        { descripcion: { contains: q } },
+        { categoria: { contains: q } },
+        { solicitante: { nombre: { contains: q } } },
+        { solicitante: { rut: { contains: q } } }
+      ];
+    }
+
+    const tickets = await prisma.ticket.findMany({
+      where: whereClause,
+      orderBy: { creadoEn: 'desc' },
+      include: {
+        solicitante: {
+          select: { id: true, rut: true, nombre: true, departamento: true, email: true, rol: true }
+        },
+        tecnico: {
+          select: { id: true, rut: true, nombre: true, departamento: true, email: true, rol: true }
+        },
+        comentarios: {
+          orderBy: { creadoEn: 'asc' },
+          include: {
+            autor: {
+              select: { id: true, nombre: true, rol: true }
+            }
           }
         }
       }
     });
 
-    return res.json(ticketActualizado);
+    return res.json(tickets);
   } catch (error) {
-    console.error('Error al actualizar estado del ticket:', error);
-    return res.status(500).json({ error: 'Error interno del servidor al actualizar el estado' });
+    console.error('[ERROR] Error al listar tickets:', error);
+    return res.status(500).json({ error: '[ERROR] Error al recuperar tickets' });
   }
 });
 
-// Health check
+// ==========================================
+// 7. DETALLE DE TICKET: GET /api/tickets/:id
+// ==========================================
+app.get('/api/tickets/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseParamId(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: '[ERROR] ID de ticket no valido' });
+    }
+
+    // Detectar rol del usuario autenticado si envia token
+    let esStaff = false;
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const payload = jwt.verify(authHeader.substring(7), JWT_SECRET) as UsuarioTokenPayload;
+        if (payload.rol === 'AGENTE_SOPORTE' || payload.rol === 'SUPERVISOR_ADMIN') {
+          esStaff = true;
+        }
+      } catch (e) {
+        // Token no valido
+      }
+    }
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id },
+      include: {
+        solicitante: {
+          select: { id: true, rut: true, nombre: true, departamento: true, email: true, rol: true }
+        },
+        tecnico: {
+          select: { id: true, rut: true, nombre: true, departamento: true, email: true, rol: true }
+        },
+        comentarios: {
+          where: esStaff ? {} : { esInterno: false },
+          orderBy: { creadoEn: 'asc' },
+          include: {
+            autor: {
+              select: { id: true, nombre: true, rol: true }
+            }
+          }
+        }
+      }
+    });
+
+    if (!ticket) {
+      return res.status(404).json({ error: '[ERROR] Ticket no encontrado' });
+    }
+
+    return res.json(ticket);
+  } catch (error) {
+    console.error('[ERROR] Error al obtener detalle de ticket:', error);
+    return res.status(500).json({ error: '[ERROR] Error al consultar ticket' });
+  }
+});
+
+// ==========================================
+// 8. AGREGAR COMENTARIO: POST /api/tickets/:id/comentarios
+// ==========================================
+const crearComentarioSchema = z.object({
+  contenido: z.string().min(1, 'El contenido del comentario es obligatorio'),
+  esInterno: z.boolean().optional().default(false)
+});
+
+app.post('/api/tickets/:id/comentarios', autenticarToken, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.usuario) {
+      return res.status(401).json({ error: '[ERROR] No autenticado' });
+    }
+
+    const id = parseParamId(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: '[ERROR] ID de ticket no valido' });
+    }
+
+    const validacion = crearComentarioSchema.safeParse(req.body);
+    if (!validacion.success) {
+      return res.status(400).json({
+        error: '[ERROR] Datos invalidos',
+        detalles: validacion.error.flatten().fieldErrors
+      });
+    }
+
+    const { contenido, esInterno } = validacion.data;
+
+    // Solo personal de soporte o administrador puede publicar notas internas
+    if (esInterno && req.usuario.rol === 'SOLICITANTE') {
+      return res.status(403).json({ error: '[DENEGADO] Solo personal de soporte puede agregar notas internas' });
+    }
+
+    const ticketExistente = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticketExistente) {
+      return res.status(404).json({ error: '[ERROR] Ticket no encontrado' });
+    }
+
+    const comentario = await prisma.comentario.create({
+      data: {
+        ticketId: id,
+        autorId: req.usuario.id,
+        contenido,
+        esInterno
+      },
+      include: {
+        autor: {
+          select: { id: true, nombre: true, rol: true }
+        }
+      }
+    });
+
+    return res.status(201).json(comentario);
+  } catch (error) {
+    console.error('[ERROR] Error al crear comentario:', error);
+    return res.status(500).json({ error: '[ERROR] Error interno al publicar comentario' });
+  }
+});
+
+// ==========================================
+// 9. ACTUALIZAR ESTADO: PATCH /api/tickets/:id/estado
+// ==========================================
+const actualizarEstadoSchema = z.object({
+  estado: z.enum(['abierto', 'en_proceso', 'pendiente_usuario', 'resuelto', 'cerrado'], {
+    errorMap: () => ({ message: 'Estado invalido (abierto, en_proceso, pendiente_usuario, resuelto, cerrado)' })
+  }),
+  ciAfectado: z.string().optional()
+});
+
+app.patch(
+  '/api/tickets/:id/estado',
+  autenticarToken,
+  autorizarRoles('AGENTE_SOPORTE', 'SUPERVISOR_ADMIN'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const id = parseParamId(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: '[ERROR] ID de ticket no valido' });
+      }
+
+      const validacion = actualizarEstadoSchema.safeParse(req.body);
+      if (!validacion.success) {
+        return res.status(400).json({
+          error: '[ERROR] Datos invalidos',
+          detalles: validacion.error.flatten().fieldErrors
+        });
+      }
+
+      const { estado, ciAfectado } = validacion.data;
+
+      const dataUpdate: any = {
+        estado
+      };
+
+      if (ciAfectado !== undefined) {
+        dataUpdate.ciAfectado = ciAfectado;
+      }
+
+      if (estado === 'resuelto' || estado === 'cerrado') {
+        dataUpdate.resueltoEn = new Date();
+      }
+
+      const ticketActualizado = await prisma.ticket.update({
+        where: { id },
+        data: dataUpdate,
+        include: {
+          solicitante: {
+            select: { id: true, rut: true, nombre: true, departamento: true, email: true, rol: true }
+          },
+          tecnico: {
+            select: { id: true, rut: true, nombre: true, departamento: true, email: true, rol: true }
+          },
+          comentarios: true
+        }
+      });
+
+      return res.json(ticketActualizado);
+    } catch (error) {
+      console.error('[ERROR] Error al actualizar estado:', error);
+      return res.status(500).json({ error: '[ERROR] Error al actualizar estado del ticket' });
+    }
+  }
+);
+
+// ==========================================
+// 10. ASIGNAR TECNICO: PATCH /api/tickets/:id/asignar
+// ==========================================
+const asignarTecnicoSchema = z.object({
+  tecnicoId: z.number().nullable()
+});
+
+app.patch(
+  '/api/tickets/:id/asignar',
+  autenticarToken,
+  autorizarRoles('AGENTE_SOPORTE', 'SUPERVISOR_ADMIN'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const id = parseParamId(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: '[ERROR] ID de ticket no valido' });
+      }
+
+      const validacion = asignarTecnicoSchema.safeParse(req.body);
+      if (!validacion.success) {
+        return res.status(400).json({
+          error: '[ERROR] Datos invalidos',
+          detalles: validacion.error.flatten().fieldErrors
+        });
+      }
+
+      const { tecnicoId } = validacion.data;
+
+      if (tecnicoId) {
+        const tecnico = await prisma.usuario.findUnique({ where: { id: tecnicoId } });
+        if (!tecnico || (tecnico.rol !== 'AGENTE_SOPORTE' && tecnico.rol !== 'SUPERVISOR_ADMIN')) {
+          return res.status(400).json({ error: '[ERROR] El usuario asignado debe tener rol de soporte o administrador' });
+        }
+      }
+
+      const ticketActualizado = await prisma.ticket.update({
+        where: { id },
+        data: {
+          tecnicoId,
+          estado: tecnicoId ? 'en_proceso' : 'abierto'
+        },
+        include: {
+          solicitante: true,
+          tecnico: true,
+          comentarios: true
+        }
+      });
+
+      return res.json(ticketActualizado);
+    } catch (error) {
+      console.error('[ERROR] Error al asignar tecnico:', error);
+      return res.status(500).json({ error: '[ERROR] Error al asignar tecnico responsable' });
+    }
+  }
+);
+
+// ==========================================
+// 11. LISTAR TECNICOS: GET /api/soporte/tecnicos
+// ==========================================
+app.get(
+  '/api/soporte/tecnicos',
+  autenticarToken,
+  autorizarRoles('AGENTE_SOPORTE', 'SUPERVISOR_ADMIN'),
+  async (_req: Request, res: Response) => {
+    try {
+      const tecnicos = await prisma.usuario.findMany({
+        where: {
+          rol: { in: ['AGENTE_SOPORTE', 'SUPERVISOR_ADMIN'] },
+          activo: true
+        },
+        select: {
+          id: true,
+          rut: true,
+          nombre: true,
+          departamento: true,
+          email: true,
+          rol: true
+        },
+        orderBy: { nombre: 'asc' }
+      });
+
+      return res.json(tecnicos);
+    } catch (error) {
+      console.error('[ERROR] Error al listar tecnicos:', error);
+      return res.status(500).json({ error: '[ERROR] Error al consultar personal de soporte' });
+    }
+  }
+);
+
+// ==========================================
+// 12. METRICAS SLA: GET /api/admin/metricas-sla
+// ==========================================
+app.get(
+  '/api/admin/metricas-sla',
+  autenticarToken,
+  autorizarRoles('AGENTE_SOPORTE', 'SUPERVISOR_ADMIN'),
+  async (_req: Request, res: Response) => {
+    try {
+      const todosLosTickets = await prisma.ticket.findMany({
+        include: { solicitante: true }
+      });
+
+      const totalTickets = todosLosTickets.length;
+      let abiertos = 0;
+      let enProceso = 0;
+      let resueltos = 0;
+      let cerrados = 0;
+      let criticosActivos = 0;
+      let sumaMinutosResolucion = 0;
+      let ticketsConResolucion = 0;
+      let ticketsCumplenSla = 0;
+
+      const catMap: Record<string, number> = {};
+      const deptoMap: Record<string, number> = {};
+
+      const now = new Date().getTime();
+
+      for (const t of todosLosTickets) {
+        if (t.estado === 'abierto') abiertos++;
+        else if (t.estado === 'en_proceso' || t.estado === 'pendiente_usuario') enProceso++;
+        else if (t.estado === 'resuelto') resueltos++;
+        else if (t.estado === 'cerrado') cerrados++;
+
+        if (t.prioridad === 'critica' && (t.estado === 'abierto' || t.estado === 'en_proceso')) {
+          criticosActivos++;
+        }
+
+        // Categorias
+        catMap[t.categoria] = (catMap[t.categoria] || 0) + 1;
+
+        // Departamentos
+        if (t.solicitante?.departamento) {
+          deptoMap[t.solicitante.departamento] = (deptoMap[t.solicitante.departamento] || 0) + 1;
+        }
+
+        // Calculo de SLA y MTTR
+        const inicio = new Date(t.creadoEn).getTime();
+        const fin = t.resueltoEn ? new Date(t.resueltoEn).getTime() : now;
+        const duracionMinutos = Math.round((fin - inicio) / (1000 * 60));
+
+        if (t.resueltoEn) {
+          sumaMinutosResolucion += duracionMinutos;
+          ticketsConResolucion++;
+        }
+
+        if (duracionMinutos <= t.slaLimiteMinutos) {
+          ticketsCumplenSla++;
+        }
+      }
+
+      const mttrPromedioMinutos =
+        ticketsConResolucion > 0 ? Math.round(sumaMinutosResolucion / ticketsConResolucion) : 0;
+      const cumplimientoSlaPorcentaje =
+        totalTickets > 0 ? Math.round((ticketsCumplenSla / totalTickets) * 100) : 100;
+
+      const distribucionCategorias = Object.entries(catMap).map(([categoria, cantidad]) => ({
+        categoria,
+        cantidad
+      }));
+
+      const distribucionDepartamentos = Object.entries(deptoMap).map(([departamento, cantidad]) => ({
+        departamento,
+        cantidad
+      }));
+
+      return res.json({
+        totalTickets,
+        abiertos,
+        enProceso,
+        resueltos,
+        cerrados,
+        criticosActivos,
+        mttrPromedioMinutos,
+        cumplimientoSlaPorcentaje,
+        distribucionCategorias,
+        distribucionDepartamentos
+      });
+    } catch (error) {
+      console.error('[ERROR] Error al calcular metricas SLA:', error);
+      return res.status(500).json({ error: '[ERROR] Error al calcular metricas analiticas' });
+    }
+  }
+);
+
+// ==========================================
+// 13. HEALTH CHECK
+// ==========================================
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: '[OK]',
+    service: 'Sistema de Tickets de Soporte y Autoservicio',
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`✓ Servidor backend ejecutándose en http://localhost:${PORT}`);
+  console.log(`[OK] Servidor backend ejecutandose en http://localhost:${PORT}`);
 });
+

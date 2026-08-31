@@ -8,22 +8,56 @@ generator client {
 }
 
 model Usuario {
-  id           Int      @id @default(autoincrement())
-  rut          String   @unique
-  nombre       String
-  departamento String
-  email        String
-  tickets      Ticket[]
+  id               Int          @id @default(autoincrement())
+  rut              String       @unique
+  nombre           String
+  departamento     String
+  email            String       @unique
+  passwordHash     String       @default("")
+  rol              String       @default("SOLICITANTE") // SOLICITANTE | AGENTE_SOPORTE | SUPERVISOR_ADMIN
+  activo           Boolean      @default(true)
+  creadoEn         DateTime     @default(now())
+
+  // Relaciones
+  ticketsCreados   Ticket[]     @relation("TicketsCreados")
+  ticketsAsignados Ticket[]     @relation("TicketsAsignados")
+  comentarios      Comentario[]
 }
 
 model Ticket {
+  id               Int          @id @default(autoincrement())
+  codigo           String       @unique
+  solicitanteId    Int
+  solicitante      Usuario      @relation("TicketsCreados", fields: [solicitanteId], references: [id])
+  
+  tecnicoId        Int?
+  tecnico          Usuario?     @relation("TicketsAsignados", fields: [tecnicoId], references: [id])
+  
+  categoria        String
+  prioridad        String       @default("media") // baja | media | alta | critica
+  estado           String       @default("abierto") // abierto | en_proceso | pendiente_usuario | resuelto | cerrado
+  descripcion      String
+  
+  // Enlaces de infraestructura y gobernanza
+  ciAfectado       String?      // ID del CI en la CMDB (ej. BALANCER001)
+  slaLimiteMinutos Int          @default(240) // 4 horas por defecto
+  
+  creadoEn         DateTime     @default(now())
+  actualizadoEn    DateTime     @updatedAt
+  resueltoEn       DateTime?
+
+  comentarios      Comentario[]
+}
+
+model Comentario {
   id          Int      @id @default(autoincrement())
-  codigo      String   @unique
-  usuarioId   Int
-  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
-  categoria   String
-  prioridad   String   // baja | media | alta | critica
-  estado      String   @default("abierto") // abierto | en_proceso | resuelto | cerrado
-  descripcion String
+  ticketId    Int
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  autorId     Int
+  autor       Usuario  @relation(fields: [autorId], references: [id])
+  
+  contenido   String
+  esInterno   Boolean  @default(false) // True: Solo visible para Soporte/Admin; False: Visible para el solicitante
   creadoEn    DateTime @default(now())
 }
+
