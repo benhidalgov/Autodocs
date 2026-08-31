@@ -14,9 +14,13 @@ import {
 
 interface ListaTicketsProps {
   onNuevoTicketClick: () => void;
+  onSeleccionarTicket?: (ticketId: number) => void;
 }
 
-export const ListaTickets: React.FC<ListaTicketsProps> = ({ onNuevoTicketClick }) => {
+export const ListaTickets: React.FC<ListaTicketsProps> = ({
+  onNuevoTicketClick,
+  onSeleccionarTicket
+}) => {
   const [tickets, setTickets] = useState<TicketDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,8 +67,8 @@ export const ListaTickets: React.FC<ListaTicketsProps> = ({ onNuevoTicketClick }
   const departamentosDisponibles = useMemo(() => {
     const set = new Set<string>();
     tickets.forEach((t) => {
-      if (t.usuario?.departamento) {
-        set.add(t.usuario.departamento);
+      if (t.solicitante?.departamento) {
+        set.add(t.solicitante.departamento);
       }
     });
     return Array.from(set).sort();
@@ -78,7 +82,7 @@ export const ListaTickets: React.FC<ListaTicketsProps> = ({ onNuevoTicketClick }
         return false;
       }
       // Filtro de Departamento
-      if (filtroDepto !== 'todos' && ticket.usuario?.departamento !== filtroDepto) {
+      if (filtroDepto !== 'todos' && ticket.solicitante?.departamento !== filtroDepto) {
         return false;
       }
       // Filtro de Búsqueda texto (código, nombre usuario, descripción, categoría)
@@ -87,8 +91,8 @@ export const ListaTickets: React.FC<ListaTicketsProps> = ({ onNuevoTicketClick }
         const codigo = ticket.codigo.toLowerCase();
         const desc = ticket.descripcion.toLowerCase();
         const categoria = ticket.categoria.toLowerCase();
-        const usuarioNombre = ticket.usuario?.nombre.toLowerCase() || '';
-        const usuarioRut = ticket.usuario?.rut.toLowerCase() || '';
+        const usuarioNombre = ticket.solicitante?.nombre.toLowerCase() || '';
+        const usuarioRut = ticket.solicitante?.rut.toLowerCase() || '';
 
         return (
           codigo.includes(query) ||
@@ -302,14 +306,14 @@ export const ListaTickets: React.FC<ListaTicketsProps> = ({ onNuevoTicketClick }
                       <td className="py-4 px-4 align-top">
                         <div className="font-semibold text-slate-800 flex items-center gap-1.5">
                           <User className="w-3.5 h-3.5 text-slate-400" />
-                          {ticket.usuario?.nombre || 'Usuario desconocido'}
+                          {ticket.solicitante?.nombre || 'Usuario desconocido'}
                         </div>
                         <div className="text-xs text-slate-500 mt-0.5 font-mono">
-                          RUT: {ticket.usuario?.rut}
+                          RUT: {ticket.solicitante?.rut}
                         </div>
                         <div className="text-xs text-slate-600 mt-1 inline-flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
                           <Building2 className="w-3 h-3 text-slate-400" />
-                          {ticket.usuario?.departamento || 'Sin Depto'}
+                          {ticket.solicitante?.departamento || 'Sin Depto'}
                         </div>
                       </td>
 
@@ -376,9 +380,15 @@ export const ListaTickets: React.FC<ListaTicketsProps> = ({ onNuevoTicketClick }
                               )}
                             </div>
                           </div>
-                          <span className="text-[10px] text-slate-400">
-                            Cambia al instante en la base de datos
-                          </span>
+                          {onSeleccionarTicket && (
+                            <button
+                              type="button"
+                              onClick={() => onSeleccionarTicket(ticket.id)}
+                              className="mt-1 w-full py-1 px-2 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 text-[11px] font-semibold rounded border border-slate-200 hover:border-indigo-200 transition text-center"
+                            >
+                              Ver Ficha y Respuestas
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
