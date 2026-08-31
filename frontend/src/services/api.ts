@@ -44,41 +44,41 @@ export const USUARIOS_DEMO: UsuarioDTO[] = [
   {
     id: 1,
     rut: '11222333-9',
-    nombre: 'Carlos Eduardo Mendoza Morales',
-    departamento: 'Tecnología e Infraestructura',
-    email: 'admin@empresa.cl',
+    nombre: 'Pablo Administrador',
+    departamento: 'Infraestructura y Redes (SMU / Unicard)',
+    email: 'pablo@unicard.cl',
     rol: 'SUPERVISOR_ADMIN'
   },
   {
     id: 2,
     rut: '15678912-7',
     nombre: 'Valentina Paz Rojas Vega',
-    departamento: 'Mesa de Ayuda y Operaciones',
-    email: 'soporte@empresa.cl',
+    departamento: 'Mesa de Ayuda y Operaciones TI',
+    email: 'soporte@smu.cl',
     rol: 'AGENTE_SOPORTE'
   },
   {
     id: 3,
     rut: '12345678-5',
     nombre: 'Ana María Silva Castro',
-    departamento: 'Recursos Humanos',
-    email: 'ana.silva@empresa.cl',
+    departamento: 'Recursos Humanos (SMU)',
+    email: 'ana.silva@smu.cl',
     rol: 'SOLICITANTE'
   },
   {
     id: 4,
     rut: '18765432-7',
     nombre: 'Gonzalo Andrés Pinto Flores',
-    departamento: 'Finanzas y Contabilidad',
-    email: 'gonzalo.pinto@empresa.cl',
+    departamento: 'Finanzas y Medios de Pago (Unicard)',
+    email: 'gonzalo.pinto@unicard.cl',
     rol: 'SOLICITANTE'
   },
   {
     id: 5,
     rut: '20123456-5',
     nombre: 'Camila Ignacia Carrasco Baeza',
-    departamento: 'Comercial y Marketing',
-    email: 'camila.carrasco@empresa.cl',
+    departamento: 'Comercial y Marketing (SMU)',
+    email: 'camila.carrasco@smu.cl',
     rol: 'SOLICITANTE'
   }
 ];

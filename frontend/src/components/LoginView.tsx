@@ -78,7 +78,7 @@ export const LoginView: React.FC = () => {
                 type="text"
                 value={identificador}
                 onChange={(e) => setIdentificador(e.target.value)}
-                placeholder="ej: 11222333-9 o admin@empresa.cl"
+                placeholder="ej: 11222333-9 o pablo@unicard.cl"
                 disabled={submitting || isLoading}
                 className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition font-mono"
               />
@@ -134,14 +134,14 @@ export const LoginView: React.FC = () => {
           <div className="space-y-2">
             <button
               type="button"
-              onClick={() => seleccionarCuentaDemo('admin@empresa.cl', 'admin2026')}
+              onClick={() => seleccionarCuentaDemo('pablo@unicard.cl', 'admin2026')}
               className="w-full text-left p-2.5 bg-white hover:bg-indigo-50/60 border border-slate-200 rounded-lg text-xs transition flex items-center justify-between group"
             >
               <div>
                 <div className="font-bold text-slate-800 group-hover:text-indigo-700">
-                  Carlos Mendoza
+                  Pablo Administrador
                 </div>
-                <div className="text-[11px] text-slate-500 font-mono">admin@empresa.cl &bull; 11222333-9</div>
+                <div className="text-[11px] text-slate-500 font-mono">pablo@unicard.cl &bull; 11222333-9</div>
               </div>
               <span className="text-[10px] font-mono px-2 py-0.5 bg-purple-100 text-purple-800 border border-purple-200 rounded font-bold">
                 [SUPERVISOR_ADMIN]
@@ -150,14 +150,14 @@ export const LoginView: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => seleccionarCuentaDemo('soporte@empresa.cl', 'soporte2026')}
+              onClick={() => seleccionarCuentaDemo('soporte@smu.cl', 'soporte2026')}
               className="w-full text-left p-2.5 bg-white hover:bg-indigo-50/60 border border-slate-200 rounded-lg text-xs transition flex items-center justify-between group"
             >
               <div>
                 <div className="font-bold text-slate-800 group-hover:text-indigo-700">
                   Valentina Rojas
                 </div>
-                <div className="text-[11px] text-slate-500 font-mono">soporte@empresa.cl &bull; 15678912-7</div>
+                <div className="text-[11px] text-slate-500 font-mono">soporte@smu.cl &bull; 15678912-7</div>
               </div>
               <span className="text-[10px] font-mono px-2 py-0.5 bg-blue-100 text-blue-800 border border-blue-200 rounded font-bold">
                 [AGENTE_SOPORTE]
@@ -166,14 +166,14 @@ export const LoginView: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => seleccionarCuentaDemo('ana.silva@empresa.cl', 'usuario2026')}
+              onClick={() => seleccionarCuentaDemo('ana.silva@smu.cl', 'usuario2026')}
               className="w-full text-left p-2.5 bg-white hover:bg-indigo-50/60 border border-slate-200 rounded-lg text-xs transition flex items-center justify-between group"
             >
               <div>
                 <div className="font-bold text-slate-800 group-hover:text-indigo-700">
                   Ana Silva (RRHH)
                 </div>
-                <div className="text-[11px] text-slate-500 font-mono">ana.silva@empresa.cl &bull; 12345678-5</div>
+                <div className="text-[11px] text-slate-500 font-mono">ana.silva@smu.cl &bull; 12345678-5</div>
               </div>
               <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded font-bold">
                 [SOLICITANTE]
