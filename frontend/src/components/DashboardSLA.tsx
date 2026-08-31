@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { MetricasSLADTO } from '@shared/types';
-import { fetchMetricasSLA } from '../services/api';
+import { MetricasSLADTO, CorrelacionIncidentesDTO } from '@shared/types';
+import { fetchMetricasSLA, fetchCorrelacionIncidentes } from '../services/api';
 import {
   Activity,
   CheckCircle2,
@@ -11,20 +11,27 @@ import {
   RotateCw,
   Server,
   TrendingUp,
-  Loader2
+  Loader2,
+  ShieldAlert,
+  Network
 } from 'lucide-react';
 
 export const DashboardSLA: React.FC = () => {
   const [metricas, setMetricas] = useState<MetricasSLADTO | null>(null);
+  const [correlaciones, setCorrelaciones] = useState<CorrelacionIncidentesDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const cargarMetricas = async () => {
+  const cargarDatos = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchMetricasSLA();
-      setMetricas(data);
+      const [dataMetricas, dataCorrelaciones] = await Promise.all([
+        fetchMetricasSLA(),
+        fetchCorrelacionIncidentes().catch(() => [])
+      ]);
+      setMetricas(dataMetricas);
+      setCorrelaciones(dataCorrelaciones);
     } catch (err: any) {
       setError(err.message || '[ERROR] Error al cargar metricas SLA');
     } finally {
@@ -33,7 +40,7 @@ export const DashboardSLA: React.FC = () => {
   };
 
   useEffect(() => {
-    cargarMetricas();
+    cargarDatos();
   }, []);
 
   return (
@@ -50,7 +57,7 @@ export const DashboardSLA: React.FC = () => {
                 Dashboard de Gobernanza y Rendimiento Operativo
               </h2>
               <span className="text-[11px] font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200/60">
-                [TELEMETRIA-SLA-MTTR]
+                [TELEMETRIA-SLA-MTTR] &bull; [CMDB-ANALYTICS]
               </span>
             </div>
           </div>
@@ -61,7 +68,7 @@ export const DashboardSLA: React.FC = () => {
 
         <button
           type="button"
-          onClick={cargarMetricas}
+          onClick={cargarDatos}
           disabled={loading}
           className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200/80 text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition flex items-center gap-2"
         >
@@ -73,7 +80,7 @@ export const DashboardSLA: React.FC = () => {
       {loading ? (
         <div className="py-16 text-center text-slate-500 text-xs flex flex-col items-center gap-2 bg-white rounded-2xl border border-slate-200 p-8">
           <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
-          <span>Calculando indicadores de desempeno y SLA...</span>
+          <span>Calculando indicadores de desempeno, SLA y correlacion de topologia...</span>
         </div>
       ) : error || !metricas ? (
         <div className="p-4 bg-rose-50 text-rose-800 border border-rose-200 rounded-xl text-xs">
@@ -147,6 +154,80 @@ export const DashboardSLA: React.FC = () => {
                 <span className="text-indigo-700">{metricas.enProceso} en curso</span>
               </div>
             </div>
+          </div>
+
+          {/* MATRIZ DE CORRELACION DE INCIDENTES Y CLUSTERES CMDB (FASE 3) */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-purple-600 flex items-center justify-center text-white">
+                  <Network className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">
+                    Matriz de Correlacion de Incidentes y Deteccion de Clusteres (CMDB)
+                  </h3>
+                  <span className="text-[11px] font-mono text-purple-700">
+                    [CORRELACION-TOPOLOGICA]
+                  </span>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded font-bold">
+                {correlaciones.length} CIs CON INCIDENTES
+              </span>
+            </div>
+
+            {correlaciones.length === 0 ? (
+              <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl text-center text-xs text-slate-400">
+                No hay incidentes concurrentes agrupados en la topologia actualmente.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {correlaciones.map((item) => (
+                  <div
+                    key={item.ciId}
+                    className={`p-4 rounded-xl border transition space-y-2.5 ${
+                      item.alertaMasiva
+                        ? 'bg-rose-50/70 border-rose-200 text-rose-950 shadow-xs'
+                        : 'bg-slate-50/70 border-slate-200 text-slate-900'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-xs text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-100">
+                        {item.ciId}
+                      </span>
+                      {item.alertaMasiva ? (
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-rose-200 text-rose-900 rounded flex items-center gap-1">
+                          <ShieldAlert className="w-3 h-3" />
+                          [ALERTA MASIVA]
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded">
+                          [{item.capa.split('_')[0]}]
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="font-bold text-xs text-slate-800">
+                      {item.ciNombre}
+                    </div>
+
+                    <p className="text-[11px] text-slate-600 leading-tight">
+                      {item.descripcionImpacto}
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-1 pt-1">
+                      <span className="text-[10px] text-slate-400 font-mono">Tickets:</span>
+                      {item.codigosTickets.map((cod) => (
+                        <span key={cod} className="font-mono text-[10px] bg-white px-1.5 py-0.2 rounded border border-slate-200 text-slate-700">
+                          {cod}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Desgloses por Categoria y Departamento */}

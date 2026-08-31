@@ -7,7 +7,10 @@ import {
   AuthResponse,
   ComentarioDTO,
   CrearComentarioPayload,
-  MetricasSLADTO
+  MetricasSLADTO,
+  ElementoCMDB,
+  SugerenciaRCADTO,
+  CorrelacionIncidentesDTO
 } from '@shared/types';
 import { formatRut } from '@shared/rut';
 
@@ -285,4 +288,60 @@ export async function fetchMetricasSLA(): Promise<MetricasSLADTO> {
   }
   return resData;
 }
+
+// ==========================================
+// 5. CMDB & INFERENCIA RCA (FASE 3)
+// ==========================================
+export async function fetchCatalogoCMDB(filtros?: {
+  capa?: string;
+  criticidad?: string;
+  busqueda?: string;
+}): Promise<ElementoCMDB[]> {
+  const params = new URLSearchParams();
+  if (filtros?.capa && filtros.capa !== 'todas') params.append('capa', filtros.capa);
+  if (filtros?.criticidad && filtros.criticidad !== 'todas') params.append('criticidad', filtros.criticidad);
+  if (filtros?.busqueda) params.append('busqueda', filtros.busqueda);
+
+  const url = `${API_BASE}/cmdb/cis${params.toString() ? `?${params.toString()}` : ''}`;
+  const res = await fetch(url, { headers: getHeaders() });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '[ERROR] Error al consultar catalogo CMDB');
+  }
+  return await res.json();
+}
+
+export async function fetchCIDetalle(id: string): Promise<ElementoCMDB & { blastRadius: string[] }> {
+  const res = await fetch(`${API_BASE}/cmdb/cis/${encodeURIComponent(id)}`, {
+    headers: getHeaders()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '[ERROR] Error al consultar detalle de CI');
+  }
+  return await res.json();
+}
+
+export async function fetchDiagnosticoRCA(ticketId: number): Promise<SugerenciaRCADTO> {
+  const res = await fetch(`${API_BASE}/tickets/${ticketId}/diagnostico-rca`, {
+    headers: getHeaders()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '[ERROR] Error al calcular diagnostico RCA');
+  }
+  return await res.json();
+}
+
+export async function fetchCorrelacionIncidentes(): Promise<CorrelacionIncidentesDTO[]> {
+  const res = await fetch(`${API_BASE}/operaciones/correlacion-masiva`, {
+    headers: getHeaders()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || '[ERROR] Error al consultar correlacion masiva');
+  }
+  return await res.json();
+}
+
 

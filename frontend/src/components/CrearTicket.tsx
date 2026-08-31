@@ -3,10 +3,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { validateRut, formatRut } from '@shared/rut';
-import { UsuarioDTO } from '@shared/types';
+import { UsuarioDTO, ElementoCMDB } from '@shared/types';
 import { useDebounce } from '../hooks/useDebounce';
-import { fetchUsuarioPorRut, crearTicket } from '../services/api';
-import { CheckCircle2, AlertCircle, Loader2, Send, Sparkles, UserCheck, ShieldAlert } from 'lucide-react';
+import { fetchUsuarioPorRut, crearTicket, fetchCatalogoCMDB } from '../services/api';
+import { CheckCircle2, AlertCircle, Loader2, Send, Sparkles, UserCheck, ShieldAlert, Server } from 'lucide-react';
 
 const ticketFormSchema = z.object({
   rut: z
@@ -22,7 +22,8 @@ const ticketFormSchema = z.object({
   descripcion: z
     .string()
     .min(5, 'La descripción debe tener al menos 5 caracteres')
-    .max(1000, 'La descripción no puede superar los 1000 caracteres')
+    .max(1000, 'La descripción no puede superar los 1000 caracteres'),
+  ciAfectado: z.string().optional()
 });
 
 type TicketFormData = z.infer<typeof ticketFormSchema>;
@@ -38,6 +39,7 @@ export const CrearTicket: React.FC<CrearTicketProps> = ({ onTicketCreado }) => {
   const [usuarioEncontrado, setUsuarioEncontrado] = useState<UsuarioDTO | null>(null);
   const [buscandoUsuario, setBuscandoUsuario] = useState(false);
   const [errorUsuario, setErrorUsuario] = useState<string | null>(null);
+  const [catalogoCMDB, setCatalogoCMDB] = useState<ElementoCMDB[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [mensajeExito, setMensajeExito] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -54,7 +56,8 @@ export const CrearTicket: React.FC<CrearTicketProps> = ({ onTicketCreado }) => {
       rut: '',
       categoria: '',
       prioridad: 'media',
-      descripcion: ''
+      descripcion: '',
+      ciAfectado: ''
     }
   });
 
@@ -98,6 +101,12 @@ export const CrearTicket: React.FC<CrearTicketProps> = ({ onTicketCreado }) => {
     checkRut();
   }, [debouncedRut, setValue]);
 
+  useEffect(() => {
+    fetchCatalogoCMDB()
+      .then(setCatalogoCMDB)
+      .catch(() => {});
+  }, []);
+
   const handleRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setRutInput(val);
@@ -121,7 +130,8 @@ export const CrearTicket: React.FC<CrearTicketProps> = ({ onTicketCreado }) => {
         rut: formatRut(data.rut),
         categoria: data.categoria,
         prioridad: data.prioridad,
-        descripcion: data.descripcion
+        descripcion: data.descripcion,
+        ciAfectado: data.ciAfectado ? data.ciAfectado : undefined
       });
 
       setMensajeExito(`¡Ticket ${nuevo.codigo} creado exitosamente para ${usuarioEncontrado.nombre}!`);
@@ -343,6 +353,31 @@ export const CrearTicket: React.FC<CrearTicketProps> = ({ onTicketCreado }) => {
                 <p className="text-xs text-rose-600 mt-1">{errors.prioridad.message}</p>
               )}
             </div>
+          </div>
+
+          {/* Componente de Infraestructura (CMDB) - Opcional */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Server className="w-3.5 h-3.5 text-indigo-600" />
+                Componente Afectado (CMDB)
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">[OPCIONAL - INFERIBLE VIA GRAFO]</span>
+            </label>
+            <select
+              {...register('ciAfectado')}
+              className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+            >
+              <option value="">-- [No estoy seguro / Detección Automática] --</option>
+              {catalogoCMDB.map((ci) => (
+                <option key={ci.id} value={ci.id}>
+                  [{ci.capa.split('_')[0]}] {ci.id} - {ci.nombre} ({ci.ip})
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Si no seleccionas un componente, el motor de inferencia deducirá automáticamente el CI y el radio de impacto.
+            </p>
           </div>
 
           {/* Descripción */}

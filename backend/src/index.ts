@@ -13,6 +13,7 @@ import {
   JWT_SECRET,
   UsuarioTokenPayload
 } from './middlewares/auth';
+import { CATALOGO_CMDB, calcularBlastRadius, sugerirCausaRaizTicket } from './cmdbData';
 
 const app = express();
 const prisma = new PrismaClient();
@@ -763,7 +764,182 @@ app.get(
 );
 
 // ==========================================
-// 13. HEALTH CHECK
+// 13. CATALOGO CMDB: GET /api/cmdb/cis
+// ==========================================
+app.get('/api/cmdb/cis', (req: Request, res: Response) => {
+  try {
+    const { capa, criticidad, busqueda } = req.query;
+
+    let resultado = [...CATALOGO_CMDB];
+
+    if (capa && typeof capa === 'string' && capa !== 'todas') {
+      resultado = resultado.filter((c) => c.capa === capa);
+    }
+
+    if (criticidad && typeof criticidad === 'string' && criticidad !== 'todas') {
+      resultado = resultado.filter((c) => c.criticidad === criticidad);
+    }
+
+    if (busqueda && typeof busqueda === 'string' && busqueda.trim()) {
+      const q = busqueda.toLowerCase().trim();
+      resultado = resultado.filter(
+        (c) =>
+          c.id.toLowerCase().includes(q) ||
+          c.nombre.toLowerCase().includes(q) ||
+          c.descripcion.toLowerCase().includes(q) ||
+          (c.palabrasClave && c.palabrasClave.some((k) => k.toLowerCase().includes(q)))
+      );
+    }
+
+    return res.json(resultado);
+  } catch (error) {
+    console.error('[ERROR] Error al listar CIs de la CMDB:', error);
+    return res.status(500).json({ error: '[ERROR] Error al consultar catalogo CMDB' });
+  }
+});
+
+// ==========================================
+// 14. DETALLE DE CI & BLAST RADIUS: GET /api/cmdb/cis/:id
+// ==========================================
+app.get('/api/cmdb/cis/:id', (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const ci = CATALOGO_CMDB.find((c) => c.id.toLowerCase() === id.toLowerCase());
+
+    if (!ci) {
+      return res.status(404).json({ error: `[ERROR] Componente de infraestructura '${id}' no encontrado en la CMDB` });
+    }
+
+    const blastRadius = calcularBlastRadius(ci.id);
+    return res.json({
+      ...ci,
+      blastRadius
+    });
+  } catch (error) {
+    console.error('[ERROR] Error al consultar CI:', error);
+    return res.status(500).json({ error: '[ERROR] Error al recuperar detalle del CI' });
+  }
+});
+
+// ==========================================
+// 15. DIAGNOSTICO RCA INTELIGENTE: GET /api/tickets/:id/diagnostico-rca
+// ==========================================
+app.get(
+  '/api/tickets/:id/diagnostico-rca',
+  autenticarToken,
+  autorizarRoles('AGENTE_SOPORTE', 'SUPERVISOR_ADMIN'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const id = parseParamId(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: '[ERROR] ID de ticket no valido' });
+      }
+
+      const ticket = await prisma.ticket.findUnique({
+        where: { id },
+        include: {
+          solicitante: true
+        }
+      });
+
+      if (!ticket) {
+        return res.status(404).json({ error: '[ERROR] Ticket no encontrado' });
+      }
+
+      const diagnostico = sugerirCausaRaizTicket({
+        id: ticket.id,
+        categoria: ticket.categoria,
+        descripcion: ticket.descripcion,
+        ciAfectado: ticket.ciAfectado
+      });
+
+      return res.json(diagnostico);
+    } catch (error) {
+      console.error('[ERROR] Error al calcular diagnostico RCA:', error);
+      return res.status(500).json({ error: '[ERROR] Error al ejecutar motor de diagnostico' });
+    }
+  }
+);
+
+// ==========================================
+// 16. CORRELACION DE INCIDENTES MASIVOS: GET /api/operaciones/correlacion-masiva
+// ==========================================
+app.get(
+  '/api/operaciones/correlacion-masiva',
+  autenticarToken,
+  autorizarRoles('AGENTE_SOPORTE', 'SUPERVISOR_ADMIN'),
+  async (_req: AuthRequest, res: Response) => {
+    try {
+      // Buscar tickets abiertos o en proceso con CI asignado
+      const ticketsActivos = await prisma.ticket.findMany({
+        where: {
+          estado: { in: ['abierto', 'en_proceso'] }
+        }
+      });
+
+      const mapaCI: Record<string, { ticketsIds: number[]; codigos: string[] }> = {};
+
+      for (const t of ticketsActivos) {
+        // Si no tiene CI, inferirlo al vuelo
+        let targetCI = t.ciAfectado;
+        if (!targetCI) {
+          const sug = sugerirCausaRaizTicket({
+            id: t.id,
+            categoria: t.categoria,
+            descripcion: t.descripcion,
+            ciAfectado: t.ciAfectado
+          });
+          targetCI = sug.ciSugerido.id;
+        }
+
+        if (!mapaCI[targetCI]) {
+          mapaCI[targetCI] = { ticketsIds: [], codigos: [] };
+        }
+        mapaCI[targetCI].ticketsIds.push(t.id);
+        mapaCI[targetCI].codigos.push(t.codigo);
+      }
+
+      const correlaciones = Object.entries(mapaCI).map(([ciId, datos]) => {
+        const ciInfo = CATALOGO_CMDB.find((c) => c.id === ciId) || {
+          id: ciId,
+          nombre: ciId,
+          capa: 'L3_MIDDLEWARE' as const,
+          criticidad: 'ALTA' as const,
+          ip: '10.24.0.0',
+          ambiente: 'PRODUCCION' as const,
+          descripcion: 'Componente identificado dinamicamente'
+        };
+
+        const total = datos.ticketsIds.length;
+        const alertaMasiva = total >= 2;
+
+        return {
+          ciId,
+          ciNombre: ciInfo.nombre,
+          capa: ciInfo.capa,
+          totalTicketsAsociados: total,
+          ticketsIds: datos.ticketsIds,
+          codigosTickets: datos.codigos,
+          alertaMasiva,
+          descripcionImpacto: alertaMasiva
+            ? `[ALERTA INCIDENTE MAYOR] ${total} tickets activos correlacionados apuntan a falla en ${ciInfo.nombre}.`
+            : `Monitoreo normal: ${total} ticket asociado.`
+        };
+      });
+
+      // Ordenar por mayor cantidad de tickets asociados
+      correlaciones.sort((a, b) => b.totalTicketsAsociados - a.totalTicketsAsociados);
+
+      return res.json(correlaciones);
+    } catch (error) {
+      console.error('[ERROR] Error al correlacionar incidentes:', error);
+      return res.status(500).json({ error: '[ERROR] Error al calcular correlacion masiva' });
+    }
+  }
+);
+
+// ==========================================
+// 17. HEALTH CHECK
 // ==========================================
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({

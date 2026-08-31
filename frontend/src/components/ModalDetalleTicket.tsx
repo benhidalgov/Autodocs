@@ -1,11 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { TicketDTO, UsuarioDTO, Estado, Prioridad } from '@shared/types';
+import {
+  TicketDTO,
+  UsuarioDTO,
+  Estado,
+  Prioridad,
+  ElementoCMDB,
+  SugerenciaRCADTO
+} from '@shared/types';
 import {
   fetchTicketDetalle,
   agregarComentario,
   actualizarEstadoTicket,
   asignarTecnicoTicket,
-  fetchTecnicos
+  fetchTecnicos,
+  fetchCatalogoCMDB,
+  fetchDiagnosticoRCA
 } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -19,7 +28,11 @@ import {
   Clock,
   Server,
   Loader2,
-  UserCheck
+  UserCheck,
+  Cpu,
+  BookOpen,
+  Check,
+  Network
 } from 'lucide-react';
 
 interface ModalDetalleTicketProps {
@@ -45,8 +58,13 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
 
   // Estados para asignacion y actualizacion
   const [tecnicosDisponibles, setTecnicosDisponibles] = useState<UsuarioDTO[]>([]);
+  const [catalogoCMDB, setCatalogoCMDB] = useState<ElementoCMDB[]>([]);
   const [ciInput, setCiInput] = useState('');
   const [guardandoEstado, setGuardandoEstado] = useState(false);
+
+  // Estados para RCA Inteligente
+  const [diagnosticoRCA, setDiagnosticoRCA] = useState<SugerenciaRCADTO | null>(null);
+  const [cargandoRCA, setCargandoRCA] = useState(false);
 
   const cargarDetalle = async () => {
     setLoading(true);
@@ -62,12 +80,29 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
     }
   };
 
+  const cargarDiagnostico = async () => {
+    if (!isStaff) return;
+    setCargandoRCA(true);
+    try {
+      const rca = await fetchDiagnosticoRCA(ticketId);
+      setDiagnosticoRCA(rca);
+    } catch (err) {
+      console.warn('[RCA] Error al calcular diagnostico:', err);
+    } finally {
+      setCargandoRCA(false);
+    }
+  };
+
   useEffect(() => {
     cargarDetalle();
     if (isStaff) {
       fetchTecnicos()
         .then(setTecnicosDisponibles)
         .catch(() => {});
+      fetchCatalogoCMDB()
+        .then(setCatalogoCMDB)
+        .catch(() => {});
+      cargarDiagnostico();
     }
   }, [ticketId, isStaff]);
 
@@ -92,12 +127,17 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
     }
   };
 
-  const handleCambiarEstado = async (nuevoEstado: Estado) => {
+  const handleCambiarEstado = async (nuevoEstado: Estado, ciOverride?: string) => {
     if (!isStaff) return;
     setGuardandoEstado(true);
+    const ciToSave = ciOverride !== undefined ? ciOverride : ciInput.trim() || undefined;
     try {
-      await actualizarEstadoTicket(ticketId, nuevoEstado, ciInput.trim() || undefined);
+      await actualizarEstadoTicket(ticketId, nuevoEstado, ciToSave);
+      if (ciOverride !== undefined) {
+        setCiInput(ciOverride);
+      }
       await cargarDetalle();
+      await cargarDiagnostico();
       onTicketUpdated();
     } catch (err: any) {
       alert(`[ERROR] Error al actualizar estado: ${err.message}`);
@@ -115,6 +155,13 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
       onTicketUpdated();
     } catch (err: any) {
       alert(`[ERROR] Error al asignar tecnico: ${err.message}`);
+    }
+  };
+
+  const handleAplicarCISugerido = (ciId: string) => {
+    setCiInput(ciId);
+    if (ticket) {
+      handleCambiarEstado(ticket.estado, ciId);
     }
   };
 
@@ -146,6 +193,20 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
     }
   };
 
+  const getCapaBadge = (capa: string) => {
+    switch (capa) {
+      case 'L1_HARDWARE':
+        return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'L2_VIRTUALIZACION':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'L3_MIDDLEWARE':
+        return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      case 'L4_APLICACION':
+      default:
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
@@ -157,10 +218,10 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-100">
-                Ficha de Atencion y Trazabilidad
+                Ficha de Atencion y Trazabilidad Operativa
               </h3>
               <span className="text-[11px] text-slate-400 font-mono">
-                [REGISTRO-INMUTABLE]
+                [REGISTRO-INMUTABLE] &bull; [CMDB-SYNC]
               </span>
             </div>
           </div>
@@ -178,7 +239,7 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
           {loading ? (
             <div className="py-16 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
               <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
-              <span>Cargando detalle del ticket...</span>
+              <span>Cargando detalle del ticket y contexto CMDB...</span>
             </div>
           ) : error || !ticket ? (
             <div className="p-4 bg-rose-50 text-rose-800 border border-rose-200 rounded-xl text-xs">
@@ -278,6 +339,103 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
                 </div>
               </div>
 
+              {/* MOTOR DE INFERENCIA RCA & BLAST RADIUS (FASE 3 - Solo Staff) */}
+              {isStaff && (
+                <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 shadow-md space-y-3.5">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-indigo-400" />
+                      <h4 className="text-xs font-bold text-slate-100">
+                        Motor de Diagnostico RCA & Blast Radius (Grafo CMDB)
+                      </h4>
+                    </div>
+                    {cargandoRCA ? (
+                      <div className="flex items-center gap-1 text-[11px] text-slate-400 font-mono">
+                        <Loader2 className="w-3 h-3 animate-spin text-indigo-400" />
+                        <span>Analizando topologia...</span>
+                      </div>
+                    ) : diagnosticoRCA ? (
+                      <span className="px-2 py-0.5 bg-indigo-950 text-indigo-300 border border-indigo-800 rounded text-[10px] font-mono font-bold">
+                        [CONFIANZA: {diagnosticoRCA.confianzaPorcentaje}%]
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {diagnosticoRCA && (
+                    <div className="space-y-3 text-xs">
+                      {/* Componente Sugerido */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-800/80 p-3 rounded-xl border border-slate-700">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-indigo-300 text-xs">
+                              {diagnosticoRCA.ciSugerido.id}
+                            </span>
+                            <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded border ${getCapaBadge(diagnosticoRCA.ciSugerido.capa)}`}>
+                              [{diagnosticoRCA.ciSugerido.capa}]
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-mono">
+                              IP: {diagnosticoRCA.ciSugerido.ip}
+                            </span>
+                          </div>
+                          <p className="text-slate-300 text-[11px] mt-1">
+                            {diagnosticoRCA.ciSugerido.nombre} &bull; {diagnosticoRCA.ciSugerido.descripcion}
+                          </p>
+                        </div>
+
+                        {ticket.ciAfectado !== diagnosticoRCA.ciSugerido.id && (
+                          <button
+                            type="button"
+                            onClick={() => handleAplicarCISugerido(diagnosticoRCA.ciSugerido.id)}
+                            disabled={guardandoEstado}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition text-[11px] shrink-0 flex items-center gap-1"
+                          >
+                            <Check className="w-3 h-3" />
+                            <span>Vincular Este CI</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Motivo & Blast Radius */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                        <div className="bg-slate-800/50 p-2.5 rounded-lg border border-slate-800">
+                          <span className="font-bold text-slate-300 block mb-1">
+                            Criterio de Deduccion:
+                          </span>
+                          <p className="text-slate-400 leading-relaxed">
+                            {diagnosticoRCA.motivoDeteccion}
+                          </p>
+                        </div>
+
+                        <div className="bg-slate-800/50 p-2.5 rounded-lg border border-slate-800">
+                          <span className="font-bold text-slate-300 flex items-center gap-1 mb-1">
+                            <Network className="w-3 h-3 text-amber-400" />
+                            <span>Blast Radius Estimado ({diagnosticoRCA.blastRadiusNodosAfectados.length} CIs):</span>
+                          </span>
+                          {diagnosticoRCA.blastRadiusNodosAfectados.length === 0 ? (
+                            <p className="text-slate-400">Sin componentes aguas arriba afectados.</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {diagnosticoRCA.blastRadiusNodosAfectados.map((nid) => (
+                                <span key={nid} className="font-mono text-[10px] bg-slate-900 text-amber-300 px-1.5 py-0.2 rounded border border-amber-800/60">
+                                  {nid}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Runbook Sugerido */}
+                      <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 flex items-center gap-2 text-[11px]">
+                        <BookOpen className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                        <span className="text-slate-400">Runbook Recomendado:</span>
+                        <span className="font-mono font-bold text-slate-200">{diagnosticoRCA.runbookMitigacion}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Panel de Resolucion y Estado (Solo Staff) */}
               {isStaff && (
                 <div className="bg-indigo-50/60 p-4 rounded-xl border border-indigo-100 space-y-3">
@@ -314,13 +472,18 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
                       <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                         Vincular Componente CMDB:
                       </label>
-                      <input
-                        type="text"
+                      <select
                         value={ciInput}
                         onChange={(e) => setCiInput(e.target.value)}
-                        placeholder="ej: BALANCER001 o PRODMIDWARE003"
                         className="w-full text-xs font-mono bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-800 focus:ring-1 focus:ring-indigo-500"
-                      />
+                      >
+                        <option value="">[NO VINCULADO / SELECCIONAR CI]</option>
+                        {catalogoCMDB.map((ci) => (
+                          <option key={ci.id} value={ci.id}>
+                            [{ci.capa.split('_')[0]}] {ci.id} - {ci.nombre}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -443,3 +606,4 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
     </div>
   );
 };
+

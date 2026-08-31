@@ -87,3 +87,43 @@ export interface MetricasSLADTO {
   distribucionDepartamentos: { departamento: string; cantidad: number }[];
 }
 
+// ==========================================
+// 5. CMDB & INFERENCIA RCA (FASE 3)
+// ==========================================
+export type CapaCI = 'L1_HARDWARE' | 'L2_VIRTUALIZACION' | 'L3_MIDDLEWARE' | 'L4_APLICACION';
+export type CriticidadCI = 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAJA';
+
+export interface ElementoCMDB {
+  id: string; // ej: BALANCER001
+  nombre: string;
+  capa: CapaCI;
+  criticidad: CriticidadCI;
+  ip: string;
+  ambiente: 'PRODUCCION' | 'QA' | 'STAGING';
+  descripcion: string;
+  palabrasClave?: string[];
+  dependencias?: string[];
+  runbookSugerido?: string;
+}
+
+export interface SugerenciaRCADTO {
+  ticketId: number;
+  ciSugerido: ElementoCMDB;
+  confianzaPorcentaje: number;
+  blastRadiusNodosAfectados: string[];
+  motivoDeteccion: string;
+  runbookMitigacion: string;
+}
+
+export interface CorrelacionIncidentesDTO {
+  ciId: string;
+  ciNombre: string;
+  capa: CapaCI;
+  totalTicketsAsociados: number;
+  ticketsIds: number[];
+  codigosTickets: string[];
+  alertaMasiva: boolean;
+  descripcionImpacto: string;
+}
+
+

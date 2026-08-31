@@ -293,9 +293,13 @@ export const ListaTickets: React.FC<ListaTicketsProps> = ({
                     >
                       {/* Código & Fecha */}
                       <td className="py-4 px-4 align-top">
-                        <div className="font-mono font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded inline-block border border-sky-200/60 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => onSeleccionarTicket?.(ticket.id)}
+                          className="font-mono font-bold text-sky-700 hover:text-indigo-800 bg-sky-50 hover:bg-sky-100 px-2 py-0.5 rounded inline-block border border-sky-200/60 text-xs transition text-left cursor-pointer"
+                        >
                           {ticket.codigo}
-                        </div>
+                        </button>
                         <div className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-slate-400" />
                           {formatearFecha(ticket.creadoEn)}
@@ -339,24 +343,23 @@ export const ListaTickets: React.FC<ListaTicketsProps> = ({
                         </span>
                       </td>
 
-                      {/* Selector de Estado */}
+                      {/* Estado y Actualización Rápida */}
                       <td className="py-4 px-4 align-top">
                         <div className="flex flex-col gap-1.5">
-                          <div className="relative">
+                          <div className="relative inline-block w-full">
                             <select
                               value={ticket.estado}
-                              disabled={isUpdating}
                               onChange={(e) =>
                                 handleCambiarEstado(ticket.id, e.target.value as Estado)
                               }
-                              className={`w-full text-xs font-semibold rounded-lg px-2.5 py-1.5 border appearance-none pr-7 transition cursor-pointer ${
-                                isUpdating
-                                  ? 'opacity-50 cursor-not-allowed'
-                                  : 'focus:outline-none focus:ring-2 focus:ring-sky-500'
-                              } ${getEstadoBadge(ticket.estado)}`}
+                              disabled={isUpdating}
+                              className={`w-full appearance-none px-3 py-1.5 pr-8 rounded-lg text-xs font-medium border uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-sky-500 transition-shadow ${getEstadoBadge(
+                                ticket.estado
+                              )} ${isUpdating ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
                             >
                               <option value="abierto">Abierto</option>
                               <option value="en_proceso">En Proceso</option>
+                              <option value="pendiente_usuario">Pendiente Usuario</option>
                               <option value="resuelto">Resuelto</option>
                               <option value="cerrado">Cerrado</option>
                             </select>
@@ -384,9 +387,9 @@ export const ListaTickets: React.FC<ListaTicketsProps> = ({
                             <button
                               type="button"
                               onClick={() => onSeleccionarTicket(ticket.id)}
-                              className="mt-1 w-full py-1 px-2 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 text-[11px] font-semibold rounded border border-slate-200 hover:border-indigo-200 transition text-center"
+                              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition text-left"
                             >
-                              Ver Ficha y Respuestas
+                              Ver Ficha & Trazabilidad &rarr;
                             </button>
                           )}
                         </div>
