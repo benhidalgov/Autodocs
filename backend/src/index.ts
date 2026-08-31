@@ -949,7 +949,9 @@ app.get('/api/health', (_req: Request, res: Response) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`[OK] Servidor backend ejecutandose en http://localhost:${PORT}`);
+const PORT_NUM = Number(process.env.PORT) || 3001;
+
+app.listen(PORT_NUM, '0.0.0.0', () => {
+  console.log(`[OK] Servidor backend ejecutandose en http://127.0.0.1:${PORT_NUM} y http://localhost:${PORT_NUM}`);
 });
 
