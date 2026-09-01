@@ -545,6 +545,11 @@ app.patch(
 
       const { estado, ciAfectado } = validacion.data;
 
+      const ticketPrevio = await prisma.ticket.findUnique({ where: { id } });
+      if (!ticketPrevio) {
+        return res.status(404).json({ error: '[ERROR] Ticket no encontrado' });
+      }
+
       const dataUpdate: any = {
         estado
       };
@@ -570,6 +575,26 @@ app.patch(
           comentarios: true
         }
       });
+
+      // Registro de trazabilidad y auditoria inmutable
+      const cambios: string[] = [];
+      if (ticketPrevio.estado !== estado) {
+        cambios.push(`Estado transicionado de '${ticketPrevio.estado.replace('_', ' ')}' a '${estado.replace('_', ' ')}'`);
+      }
+      if (ciAfectado !== undefined && ciAfectado !== ticketPrevio.ciAfectado) {
+        cambios.push(`CI CMDB vinculado: [${ciAfectado || 'Sin CI'}]`);
+      }
+
+      if (cambios.length > 0 && req.usuario) {
+        await prisma.comentario.create({
+          data: {
+            ticketId: id,
+            autorId: req.usuario.id,
+            contenido: `[AUDITORIA-ESTADO] ${req.usuario.nombre} (${req.usuario.rol}): ${cambios.join(' | ')}.`,
+            esInterno: false
+          }
+        });
+      }
 
       return res.json(ticketActualizado);
     } catch (error) {
@@ -607,8 +632,18 @@ app.patch(
 
       const { tecnicoId } = validacion.data;
 
+      const ticketPrevio = await prisma.ticket.findUnique({
+        where: { id },
+        include: { tecnico: true }
+      });
+
+      if (!ticketPrevio) {
+        return res.status(404).json({ error: '[ERROR] Ticket no encontrado' });
+      }
+
+      let tecnico = null;
       if (tecnicoId) {
-        const tecnico = await prisma.usuario.findUnique({ where: { id: tecnicoId } });
+        tecnico = await prisma.usuario.findUnique({ where: { id: tecnicoId } });
         if (!tecnico || (tecnico.rol !== 'AGENTE_SOPORTE' && tecnico.rol !== 'SUPERVISOR_ADMIN')) {
           return res.status(400).json({ error: '[ERROR] El usuario asignado debe tener rol de soporte o administrador' });
         }
@@ -618,7 +653,7 @@ app.patch(
         where: { id },
         data: {
           tecnicoId,
-          estado: tecnicoId ? 'en_proceso' : 'abierto'
+          estado: tecnicoId && ticketPrevio.estado === 'abierto' ? 'en_proceso' : ticketPrevio.estado
         },
         include: {
           solicitante: true,
@@ -626,6 +661,22 @@ app.patch(
           comentarios: true
         }
       });
+
+      // Registro de auditoria por cambio de asignacion
+      if (req.usuario && ticketPrevio.tecnicoId !== tecnicoId) {
+        const detalleAsignacion = tecnicoId
+          ? `Asigno como responsable a ${tecnico?.nombre} (${tecnico?.rol})`
+          : `Removio asignacion de tecnico (Ticket en cola)`;
+
+        await prisma.comentario.create({
+          data: {
+            ticketId: id,
+            autorId: req.usuario.id,
+            contenido: `[AUDITORIA-ASIGNACION] ${req.usuario.nombre} (${req.usuario.rol}): ${detalleAsignacion}.`,
+            esInterno: false
+          }
+        });
+      }
 
       return res.json(ticketActualizado);
     } catch (error) {

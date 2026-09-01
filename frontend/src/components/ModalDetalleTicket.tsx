@@ -32,7 +32,8 @@ import {
   Cpu,
   BookOpen,
   Check,
-  Network
+  Network,
+  History
 } from 'lucide-react';
 
 interface ModalDetalleTicketProps {
@@ -502,46 +503,81 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
                   </div>
                 ) : (
                   <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                    {ticket.comentarios.map((c) => (
-                      <div
-                        key={c.id}
-                        className={`p-3.5 rounded-xl border text-xs ${
-                          c.esInterno
-                            ? 'bg-purple-50/70 border-purple-200 text-purple-950'
-                            : c.autor?.id === usuario?.id
-                            ? 'bg-indigo-50/70 border-indigo-200 text-indigo-950'
-                            : 'bg-slate-50 border-slate-200 text-slate-900'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-800">
-                              {c.autor?.nombre || 'Usuario'}
-                            </span>
-                            <span className="text-[10px] font-mono px-1.5 py-0.2 bg-white/80 border rounded text-slate-600">
-                              [{c.autor?.rol || 'USER'}]
-                            </span>
-                            {c.esInterno && (
-                              <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-purple-200 text-purple-900 rounded flex items-center gap-1">
-                                <Lock className="w-2.5 h-2.5" />
-                                [NOTA INTERNA SOPORTE]
-                              </span>
-                            )}
+                    {ticket.comentarios.map((c) => {
+                      const esAuditoria = c.contenido.startsWith('[AUDITORIA-');
+
+                      if (esAuditoria) {
+                        return (
+                          <div
+                            key={c.id}
+                            className="p-2.5 rounded-xl border border-amber-200 bg-amber-50/70 text-amber-950 text-xs flex items-start gap-2.5 shadow-2xs"
+                          >
+                            <div className="p-1 rounded-md bg-amber-200 text-amber-900 shrink-0 mt-0.5">
+                              <History className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 mb-0.5">
+                                <span className="font-mono font-bold text-[10px] bg-amber-200/80 px-1.5 py-0.2 rounded border border-amber-300">
+                                  [AUDITORIA INMUTABLE]
+                                </span>
+                                <span className="text-[10px] text-amber-800/80 font-mono">
+                                  {new Date(c.creadoEn).toLocaleTimeString('es-CL', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    day: '2-digit',
+                                    month: '2-digit'
+                                  })}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-amber-900 leading-snug font-mono">
+                                {c.contenido.replace(/^\[AUDITORIA-[A-Z]+\]\s*/, '')}
+                              </p>
+                            </div>
                           </div>
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            {new Date(c.creadoEn).toLocaleTimeString('es-CL', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              day: '2-digit',
-                              month: '2-digit'
-                            })}
-                          </span>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={c.id}
+                          className={`p-3.5 rounded-xl border text-xs ${
+                            c.esInterno
+                              ? 'bg-purple-50/70 border-purple-200 text-purple-950'
+                              : c.autor?.id === usuario?.id
+                              ? 'bg-indigo-50/70 border-indigo-200 text-indigo-950'
+                              : 'bg-slate-50 border-slate-200 text-slate-900'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-800">
+                                {c.autor?.nombre || 'Usuario'}
+                              </span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.2 bg-white/80 border rounded text-slate-600">
+                                [{c.autor?.rol || 'USER'}]
+                              </span>
+                              {c.esInterno && (
+                                <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 bg-purple-200 text-purple-900 rounded flex items-center gap-1">
+                                  <Lock className="w-2.5 h-2.5" />
+                                  [NOTA INTERNA SOPORTE]
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {new Date(c.creadoEn).toLocaleTimeString('es-CL', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                day: '2-digit',
+                                month: '2-digit'
+                              })}
+                            </span>
+                          </div>
+                          <p className="text-xs leading-relaxed whitespace-pre-wrap">
+                            {c.contenido}
+                          </p>
                         </div>
-                        <p className="text-xs leading-relaxed whitespace-pre-wrap">
-                          {c.contenido}
-                        </p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -549,13 +585,22 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
               {/* Formulario para agregar respuesta / nota */}
               <form onSubmit={handleEnviarComentario} className="space-y-3 pt-2 border-t border-slate-100">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Publicar Actualizacion o Respuesta
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Publicar Actualizacion o Respuesta
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">[Ctrl + Enter para enviar]</span>
+                  </div>
                   <textarea
                     rows={3}
                     value={nuevoContenido}
                     onChange={(e) => setNuevoContenido(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        handleEnviarComentario(e);
+                      }
+                    }}
                     placeholder="Escriba su respuesta formal o detalle del diagnostico..."
                     disabled={enviandoComentario}
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:bg-white transition"

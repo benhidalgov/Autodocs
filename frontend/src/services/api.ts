@@ -646,11 +646,37 @@ export async function actualizarEstadoTicket(
   const ticket = TICKETS_MEMORIA.find((t) => t.id === id);
   if (!ticket) throw new Error('[ERROR] Ticket no encontrado');
 
+  const currentUser = getStoredUser() || USUARIOS_DEMO[0];
+  const estadoPrevio = ticket.estado;
+  const ciPrevio = ticket.ciAfectado;
+
   ticket.estado = nuevoEstado;
   if (ciAfectado !== undefined) ticket.ciAfectado = ciAfectado;
   if (nuevoEstado === 'resuelto' || nuevoEstado === 'cerrado') {
     ticket.resueltoEn = new Date().toISOString();
   }
+
+  const cambios: string[] = [];
+  if (estadoPrevio !== nuevoEstado) {
+    cambios.push(`Estado transicionado de '${estadoPrevio.replace('_', ' ')}' a '${nuevoEstado.replace('_', ' ')}'`);
+  }
+  if (ciAfectado !== undefined && ciAfectado !== ciPrevio) {
+    cambios.push(`CI CMDB vinculado: [${ciAfectado || 'Sin CI'}]`);
+  }
+
+  if (cambios.length > 0) {
+    if (!ticket.comentarios) ticket.comentarios = [];
+    ticket.comentarios.push({
+      id: ticket.comentarios.length + 1,
+      ticketId: id,
+      autorId: currentUser.id,
+      autor: currentUser,
+      contenido: `[AUDITORIA-ESTADO] ${currentUser.nombre} (${currentUser.rol}): ${cambios.join(' | ')}.`,
+      esInterno: false,
+      creadoEn: new Date().toISOString()
+    });
+  }
+
   return ticket;
 }
 
@@ -673,8 +699,26 @@ export async function asignarTecnicoTicket(
   const ticket = TICKETS_MEMORIA.find((t) => t.id === id);
   if (!ticket) throw new Error('[ERROR] Ticket no encontrado');
 
+  const currentUser = getStoredUser() || USUARIOS_DEMO[0];
+  const tec = tecnicoId ? USUARIOS_DEMO.find((u) => u.id === tecnicoId) || null : null;
+
   ticket.tecnicoId = tecnicoId;
-  ticket.tecnico = tecnicoId ? USUARIOS_DEMO.find((u) => u.id === tecnicoId) || null : null;
+  ticket.tecnico = tec;
+  if (tecnicoId && ticket.estado === 'abierto') {
+    ticket.estado = 'en_proceso';
+  }
+
+  if (!ticket.comentarios) ticket.comentarios = [];
+  ticket.comentarios.push({
+    id: ticket.comentarios.length + 1,
+    ticketId: id,
+    autorId: currentUser.id,
+    autor: currentUser,
+    contenido: `[AUDITORIA-ASIGNACION] ${currentUser.nombre} (${currentUser.rol}): ${tecnicoId ? `Asigno como responsable a ${tec?.nombre} (${tec?.rol})` : 'Removio asignacion de tecnico'}.`,
+    esInterno: false,
+    creadoEn: new Date().toISOString()
+  });
+
   return ticket;
 }
 
