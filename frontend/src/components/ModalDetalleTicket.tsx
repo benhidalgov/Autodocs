@@ -4,7 +4,6 @@ import {
   UsuarioDTO,
   Estado,
   Prioridad,
-  ElementoCMDB,
   SugerenciaRCADTO
 } from '@shared/types';
 import {
@@ -13,7 +12,6 @@ import {
   actualizarEstadoTicket,
   asignarTecnicoTicket,
   fetchTecnicos,
-  fetchCatalogoCMDB,
   fetchDiagnosticoRCA
 } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -59,7 +57,6 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
 
   // Estados para asignacion y actualizacion
   const [tecnicosDisponibles, setTecnicosDisponibles] = useState<UsuarioDTO[]>([]);
-  const [catalogoCMDB, setCatalogoCMDB] = useState<ElementoCMDB[]>([]);
   const [ciInput, setCiInput] = useState('');
   const [guardandoEstado, setGuardandoEstado] = useState(false);
 
@@ -99,9 +96,6 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
     if (isStaff) {
       fetchTecnicos()
         .then(setTecnicosDisponibles)
-        .catch(() => {});
-      fetchCatalogoCMDB()
-        .then(setCatalogoCMDB)
         .catch(() => {});
       cargarDiagnostico();
     }
@@ -439,52 +433,32 @@ export const ModalDetalleTicket: React.FC<ModalDetalleTicketProps> = ({
 
               {/* Panel de Resolucion y Estado (Solo Staff) */}
               {isStaff && (
-                <div className="bg-indigo-50/60 p-4 rounded-xl border border-indigo-100 space-y-3">
+                <div className="bg-indigo-50/60 p-4 rounded-xl border border-indigo-100 space-y-2.5">
                   <div className="text-xs font-bold text-indigo-950 flex items-center justify-between">
                     <span>Acciones de Mesa de Ayuda y Gobernanza</span>
                     {guardandoEstado && <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Cambiar Estado del Ticket:
-                      </label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {(['abierto', 'en_proceso', 'pendiente_usuario', 'resuelto', 'cerrado'] as Estado[]).map((st) => (
-                          <button
-                            key={st}
-                            type="button"
-                            onClick={() => handleCambiarEstado(st)}
-                            disabled={guardandoEstado || ticket.estado === st}
-                            className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition ${
-                              ticket.estado === st
-                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                            }`}
-                          >
-                            {st.replace('_', ' ')}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Vincular Componente CMDB:
-                      </label>
-                      <select
-                        value={ciInput}
-                        onChange={(e) => setCiInput(e.target.value)}
-                        className="w-full text-xs font-mono bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-800 focus:ring-1 focus:ring-indigo-500"
-                      >
-                        <option value="">[NO VINCULADO / SELECCIONAR CI]</option>
-                        {catalogoCMDB.map((ci) => (
-                          <option key={ci.id} value={ci.id}>
-                            [{ci.capa.split('_')[0]}] {ci.id} - {ci.nombre}
-                          </option>
-                        ))}
-                      </select>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1.5">
+                      Cambiar Estado del Ticket:
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(['abierto', 'en_proceso', 'pendiente_usuario', 'resuelto', 'cerrado'] as Estado[]).map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => handleCambiarEstado(st)}
+                          disabled={guardandoEstado || ticket.estado === st}
+                          className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
+                            ticket.estado === st
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {st.replace('_', ' ')}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
